@@ -38,6 +38,19 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0;border-
 @media(max-width:560px){.wrap{padding:12px}.top{margin-bottom:15px}.brand{font-size:19px}.logo{width:43px;height:43px;border-radius:14px}.hero{min-height:0;padding:28px 22px;border-radius:24px}.hero:before{width:180px;height:180px;right:-75px;top:72%;opacity:.18}.hero:after{right:78px;top:auto;bottom:18px;font-size:23px;opacity:.3}.hero h1{font-size:clamp(35px,10vw,47px);letter-spacing:-1.5px;max-width:460px}.hero .muted{font-size:14px;max-width:390px}.hero-pills{margin-top:17px}.hero-pills span{font-size:11px;padding:7px 9px}.panel{border-radius:20px;padding:18px}.panel h2{font-size:19px}.result-grid{grid-template-columns:1fr}.recipe{padding:18px}.drop{padding:18px 12px}.drop input{width:100%}.top small{display:block}}
 @media(max-width:360px){.brand{font-size:17px}.hero h1{font-size:33px}.panel{padding:15px}.row .field{min-width:0}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important}}
+
+.saved-panel{margin-top:20px!important}
+.saved-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0 4px}
+.saved-count{font-size:12px;color:#45684d;background:#edf5eb;border-radius:999px;padding:7px 10px;font-weight:800}
+.save-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:#fff;border:1px solid #dce8dc;color:#276749;padding:10px 12px;border-radius:12px;font-size:13px;margin-top:10px;width:100%}
+.save-btn.is-saved{background:#eaf4ed;border-color:#cfe3d1;color:#24563d}
+.saved-card{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:16px;background:#fff;padding:15px;margin-top:10px}
+.saved-card h3{margin:0 0 5px;font-size:16px;color:var(--d);line-height:1.3}
+.saved-card p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.saved-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.saved-actions button{font-size:12px;padding:8px 10px}
+.saved-empty{padding:20px;text-align:center;border:1px dashed #cdddcf;background:#f8fbf7;color:var(--muted);border-radius:16px;font-size:13px;margin-top:12px}
+@media(max-width:560px){.saved-card{padding:13px}.saved-toolbar{align-items:flex-start}}
 </style></head>
 <body><main class="wrap">
 <header class="top"><div class="brand"><span class="logo">🥑</span><span>KylKocken <span style="color:var(--p)">AI</span><br><small class="muted" style="font-size:12px;font-weight:500;letter-spacing:0">Din personliga AI-kock</small></span></div><button class="secondary" id="clear">↻ Börja om</button></header>
@@ -58,17 +71,56 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0;border-
 <button class="primary full" id="recipes">✨ Skapa mina recept</button><div class="status" id="recipeStatus"></div>
 </section></div>
 <section class="panel hidden" id="results" style="margin-top:18px"><div class="panel-head"><span class="step-icon">🍽️</span><div><h2>Dina personliga recept</h2><p class="muted">Goda idéer, skapade utifrån det du har hemma.</p></div></div><div id="recipeGrid" class="result-grid"></div></section>
+<section class="panel saved-panel" id="savedPanel">
+<div class="panel-head"><span class="step-icon">♡</span><div><h2>Mina sparade recept</h2><p class="muted">Spara favoriter och hitta dem igen när du vill laga mat.</p></div></div>
+<div class="saved-toolbar"><span class="saved-count" id="savedCount">0 sparade recept</span><button class="secondary" id="exportSaved" type="button">⬇ Exportera recept</button></div>
+<div id="savedGrid"></div>
+</section>
 <p class="notice">Bildanalys kan missa varor eller mängder. Kontrollera ingredienslistan själv. Vid allergier: kontrollera alltid förpackningar och eventuell korskontaminering. Den här startversionen skickar bilder till din konfigurerade AI-backend när du väljer att skanna.</p>
 </main>
 <script>
-const $=id=>document.getElementById(id);let ingredients=[];let selectedFiles=[];
+const $=id=>document.getElementById(id);let ingredients=[];let selectedFiles=[];let currentRecipes=[];
+const SAVED_KEY='kylkocken_saved_recipes_v1';
+function getSaved(){try{return JSON.parse(localStorage.getItem(SAVED_KEY)||'[]')}catch{return []}}
+function setSaved(list){try{localStorage.setItem(SAVED_KEY,JSON.stringify(list));return true}catch{return false}}
+function recipeKey(r){return (r.title||'Recept')+'|'+(r.minutes||'')+'|'+JSON.stringify(r.ingredients||[])}
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
+function updateSaveButtons(){document.querySelectorAll('[data-save-index]').forEach(btn=>{const r=currentRecipes[Number(btn.dataset.saveIndex)];if(!r)return;const saved=getSaved().some(x=>x.key===recipeKey(r));btn.classList.toggle('is-saved',saved);btn.textContent=saved?'♥ Sparat recept':'♡ Spara recept'})}
+function renderSaved(){
+ const list=getSaved();$('savedCount').textContent=list.length+' '+(list.length===1?'sparat recept':'sparade recept');
+ const box=$('savedGrid');box.innerHTML='';
+ if(!list.length){box.innerHTML='<div class="saved-empty">Inga sparade recept ännu. Tryck på ”Spara recept” under ett recept för att lägga till din första favorit.</div>';return}
+ list.forEach((entry,index)=>{const card=document.createElement('article');card.className='saved-card';
+ const info=document.createElement('div');info.style.flex='1';const h=document.createElement('h3');h.textContent=entry.recipe.title||'Recept';const p=document.createElement('p');p.textContent='⏱ '+(entry.recipe.minutes||'?')+' min · '+(entry.recipe.servings||'?')+' portioner';
+ const actions=document.createElement('div');actions.className='saved-actions';
+ const open=document.createElement('button');open.className='secondary';open.type='button';open.textContent='Visa recept';open.onclick=()=>showSavedRecipe(entry.recipe);
+ const del=document.createElement('button');del.className='secondary';del.type='button';del.textContent='Ta bort';del.onclick=()=>{const latest=getSaved();latest.splice(index,1);setSaved(latest);renderSaved();updateSaveButtons()};
+ actions.append(open,del);info.append(h,p,actions);card.appendChild(info);box.appendChild(card)});
+}
+function saveRecipe(index){const recipe=currentRecipes[index];if(!recipe)return;const list=getSaved();const key=recipeKey(recipe);const found=list.findIndex(x=>x.key===key);if(found>=0)list.splice(found,1);else list.unshift({key,recipe,savedAt:new Date().toISOString()});if(!setSaved(list)){status('recipeStatus','Det gick inte att spara. Kontrollera att webbläsaren tillåter lokal lagring.',true);return}renderSaved();updateSaveButtons();status('recipeStatus',found>=0?'Receptet togs bort från dina sparade recept.':'Receptet sparades på den här enheten.');}
+function showSavedRecipe(recipe){currentRecipes=[recipe];const grid=$('recipeGrid');grid.innerHTML='';renderRecipeCard(recipe,0);$('results').classList.remove('hidden');$('results').scrollIntoView({behavior:'smooth'})}
+function renderRecipeCard(recipe,index){
+ const grid=$('recipeGrid');const card=document.createElement('article');card.className='recipe';
+ const title=document.createElement('h3');title.textContent=recipe.title||'Recept';card.appendChild(title);
+ const meta=document.createElement('div');meta.className='meta';meta.textContent='⏱ '+(recipe.minutes||'?')+' min · 👥 '+(recipe.servings||'?')+' portioner';card.appendChild(meta);
+ const desc=document.createElement('p');desc.textContent=recipe.description||'';card.appendChild(desc);
+ const h=document.createElement('b');h.textContent='Ingredienser';card.appendChild(h);
+ const ul=document.createElement('ul');(recipe.ingredients||[]).forEach(x=>{const li=document.createElement('li');li.textContent=typeof x==='string'?x:(x.amount||'')+' '+(x.name||'');ul.appendChild(li)});card.appendChild(ul);
+ const sh=document.createElement('b');sh.textContent='Gör så här';card.appendChild(sh);
+ const ol=document.createElement('ol');(recipe.steps||[]).forEach(x=>{const li=document.createElement('li');li.textContent=x;ol.appendChild(li)});card.appendChild(ol);
+ if(recipe.missingIngredients?.length){const miss=document.createElement('p');miss.textContent='Saknas: '+recipe.missingIngredients.join(', ');card.appendChild(miss)}
+ const save=document.createElement('button');save.type='button';save.className='save-btn';save.dataset.saveIndex=String(index);save.onclick=()=>saveRecipe(index);card.appendChild(save);grid.appendChild(card);updateSaveButtons();
+}
+function showSavedRecipe(recipe){currentRecipes=[recipe];$('recipeGrid').innerHTML='';renderRecipeCard(recipe,0);$('results').classList.remove('hidden');$('results').scrollIntoView({behavior:'smooth'})}
+function exportSaved(){const list=getSaved();if(!list.length){status('recipeStatus','Du har inga sparade recept att exportera ännu.');return}const blob=new Blob([JSON.stringify(list.map(x=>x.recipe),null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='mina-kylkocken-recept.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url)}
+$('exportSaved').addEventListener('click',exportSaved);renderSaved();
 function status(id,msg,error=false){const el=$(id);el.textContent=msg;el.classList.remove('hidden');el.style.display='block';el.classList.toggle('error',error)}
 function render(){const box=$('ingredientList');box.innerHTML='';ingredients.forEach((v,i)=>{const b=document.createElement('button');b.className='chip';b.textContent=v+' ×';b.title='Ta bort '+v;b.onclick=()=>{ingredients.splice(i,1);render()};box.appendChild(b)})}
 function addManual(){const s=$('manual').value;const arr=s.split(/[,;\n]/).map(x=>x.trim()).filter(Boolean);for(const v of arr)if(!ingredients.some(x=>x.toLowerCase()===v.toLowerCase()))ingredients.push(v);$('manual').value='';render()}
 $('add').onclick=addManual;$('manual').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addManual()}});
 $('photos').addEventListener('change',e=>{selectedFiles=Array.from(e.target.files||[]);const img=$('preview');if(selectedFiles[0]){img.src=URL.createObjectURL(selectedFiles[0]);img.classList.remove('hidden')}});
 $('scan').onclick=async()=>{if(!selectedFiles.length){status('scanStatus','Välj eller ta minst en bild först.',true);return}const fd=new FormData();selectedFiles.forEach(f=>fd.append('images',f));status('scanStatus','AI analyserar bilden/bilderna …');$('scan').disabled=true;try{const r=await fetch('/api/scan',{method:'POST',body:fd});const data=await r.json();if(!r.ok)throw new Error(data.error||'Skanningen misslyckades.');ingredients=[...new Set([...ingredients,...(data.ingredients||[]).map(x=>typeof x==='string'?x:x.name).filter(Boolean)])];render();status('scanStatus','AI hittade förslag på ingredienser. Kontrollera listan och rätta den innan du skapar recept.')}catch(e){status('scanStatus',e.message+' Kontrollera att backend är startad och API-nyckeln är inställd.',true)}finally{$('scan').disabled=false}};
-$('recipes').onclick=async()=>{addManual();if(!ingredients.length){status('recipeStatus','Skanna en bild eller skriv in minst en ingrediens först.',true);return}const p={ingredients,meal:$('meal').value,servings:+$('servings').value,maxMinutes:+$('time').value,diet:$('diet').value,allergies:$('allergies').value,likes:$('likes').value,budget:$('budget').value};status('recipeStatus','AI skapar recept utifrån just dina ingredienser …');$('recipes').disabled=true;try{const r=await fetch('/api/recipes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const data=await r.json();if(!r.ok)throw new Error(data.error||'Det gick inte att skapa recepten.');const grid=$('recipeGrid');grid.innerHTML='';(data.recipes||[]).forEach(recipe=>{const card=document.createElement('article');card.className='recipe';const title=document.createElement('h3');title.textContent=recipe.title||'Recept';card.appendChild(title);const meta=document.createElement('div');meta.className='meta';meta.textContent=`⏱ ${recipe.minutes||'?'} min · 👥 ${recipe.servings||p.servings} portioner`;card.appendChild(meta);const desc=document.createElement('p');desc.textContent=recipe.description||'';card.appendChild(desc);const h=document.createElement('b');h.textContent='Ingredienser';card.appendChild(h);const ul=document.createElement('ul');(recipe.ingredients||[]).forEach(x=>{const li=document.createElement('li');li.textContent=typeof x==='string'?x:`${x.amount||''} ${x.name||''}`;ul.appendChild(li)});card.appendChild(ul);const sh=document.createElement('b');sh.textContent='Gör så här';card.appendChild(sh);const ol=document.createElement('ol');(recipe.steps||[]).forEach(x=>{const li=document.createElement('li');li.textContent=x;ol.appendChild(li)});card.appendChild(ol);if(recipe.missingIngredients?.length){const miss=document.createElement('p');miss.textContent='Saknas: '+recipe.missingIngredients.join(', ');card.appendChild(miss)}grid.appendChild(card)});$('results').classList.remove('hidden');status('recipeStatus','Recepten är klara. Kontrollera ingredienser och allergener.');$('results').scrollIntoView({behavior:'smooth'})}catch(e){status('recipeStatus',e.message+' Kontrollera att backend är startad och API-nyckeln är inställd.',true)}finally{$('recipes').disabled=false}};
+$('recipes').onclick=async()=>{addManual();if(!ingredients.length){status('recipeStatus','Skanna en bild eller skriv in minst en ingrediens först.',true);return}const p={ingredients,meal:$('meal').value,servings:+$('servings').value,maxMinutes:+$('time').value,diet:$('diet').value,allergies:$('allergies').value,likes:$('likes').value,budget:$('budget').value};status('recipeStatus','AI skapar recept utifrån just dina ingredienser …');$('recipes').disabled=true;try{const r=await fetch('/api/recipes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const data=await r.json();if(!r.ok)throw new Error(data.error||'Det gick inte att skapa recepten.');currentRecipes=data.recipes||[];$('recipeGrid').innerHTML='';currentRecipes.forEach((recipe,index)=>renderRecipeCard(recipe,index));$('results').classList.remove('hidden');status('recipeStatus','Recepten är klara. Kontrollera ingredienser och allergener.');$('results').scrollIntoView({behavior:'smooth'})}catch(e){status('recipeStatus',e.message+' Kontrollera att backend är startad och API-nyckeln är inställd.',true)}finally{$('recipes').disabled=false}};
 $('clear').onclick=()=>{ingredients=[];selectedFiles=[];$('photos').value='';$('preview').classList.add('hidden');$('ingredientList').innerHTML='';$('results').classList.add('hidden');$('scanStatus').style.display='none';$('recipeStatus').style.display='none';toast('Formuläret är rensat.')};
 function toast(s){status('scanStatus',s)}
 </script></body></html>
